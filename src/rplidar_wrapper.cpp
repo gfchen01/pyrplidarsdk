@@ -447,7 +447,7 @@ class RplidarDriver {
     auto ret_without_ts = ProcessScanNodes(nodes, node_count);
     auto ret_with_ts = std::tuple_cat(
         std::move(ret_without_ts),
-        std::make_tuple(timestamp_uS)
+        std::make_tuple(timestamp_uS * 1000)  // Convert microseconds to nanoseconds
     );
     return ret_with_ts;
   }
