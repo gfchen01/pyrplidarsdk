@@ -422,7 +422,7 @@ class RplidarDriver {
    * @note Scanning must be started before calling this method.
    *       The returned vectors contain only valid measurement points.
    */
-  std::optional<std::tuple<std::vector<float>, std::vector<float>, std::vector<uint8_t>, std::vector<uint64_t>>> 
+  std::optional<std::tuple<std::vector<float>, std::vector<float>, std::vector<uint8_t>, uint64_t>>
   GetScanDataWithTimestamp() {
     if (!IsConnected() || driver_ == nullptr) {
       std::cerr << "Error: Device is not connected or driver is null." << std::endl;
@@ -444,7 +444,12 @@ class RplidarDriver {
       return std::nullopt;
     }
 
-    return ProcessScanNodesWithTimeStamp(nodes, node_count, timestamp_uS);
+    auto ret_without_ts = ProcessScanNodes(nodes, node_count);
+    auto ret_with_ts = std::tuple_cat(
+        std::move(ret_without_ts),
+        std::make_tuple(timestamp_uS)
+    );
+    return ret_with_ts;
   }
 
   /**
@@ -568,52 +573,6 @@ class RplidarDriver {
     return std::make_tuple(std::move(angles), std::move(ranges), std::move(qualities));
   }
 
-  /**
-   * Processes raw scan nodes and converts them to Python-friendly format.
-   * 
-   * @param nodes Array of scan measurement nodes
-   * @param node_count Number of nodes in the array
-   * @return Tuple of (angles, ranges, qualities) vectors containing valid points
-   */
-  std::tuple<std::vector<float>, std::vector<float>, std::vector<uint8_t>, std::vector<uint64_t>>
-  ProcessScanNodesWithTimeStamp(const sl_lidar_response_measurement_node_hq_t* nodes, 
-                   size_t node_count, sl_u64 timestamp_uS) const {
-    std::vector<float> angles;
-    std::vector<float> ranges;
-    std::vector<uint8_t> qualities;
-    std::vector<uint64_t> timestamps;
-
-    // Pre-allocate with estimated capacity for better performance
-    const size_t estimated_valid_points = node_count * 0.8;  // Assume 80% valid points
-    angles.reserve(estimated_valid_points);
-    ranges.reserve(estimated_valid_points);
-    qualities.reserve(estimated_valid_points);
-    timestamps.reserve(estimated_valid_points);
-
-    for (size_t i = 0; i < node_count; ++i) {
-      const auto& node = nodes[i];
-      
-      // Convert angle from Q14 format to radians
-      const double angle_rad = static_cast<double>(node.angle_z_q14) * kAngleQ14ToRadians;
-      
-      // Convert distance from Q2 mm to meters
-      const double range_m = static_cast<double>(node.dist_mm_q2) * kDistanceQ2ToMeters;
-
-      // Timestamp in nanoseconds
-      const uint64_t timestamp = (timestamp_uS + static_cast<uint64_t>(i / node_count * kScanDuration)) * 1000; // Increment timestamp for each node 
-      
-      // Only include valid measurement points
-      if (range_m > 0.0) {
-        angles.push_back(static_cast<float>(angle_rad));
-        ranges.push_back(static_cast<float>(range_m));
-        qualities.push_back(node.quality);
-        timestamps.push_back(timestamp);
-      }
-    }
-
-    return std::make_tuple(std::move(angles), std::move(ranges), std::move(qualities), std::move(timestamps));
-  }
-
   // Configuration parameters
   std::optional<std::string> port_;
   std::optional<std::string> ip_address_;
@@ -720,16 +679,17 @@ NB_MODULE(rplidar_wrapper, m) {
                Only valid measurement points are included in the results.
            )")
       .def("get_scan_data_with_timestamp", &RplidarDriver::GetScanDataWithTimestamp,
-           R"(           Retrieve latest scan data with timestamps.
+           R"(           
+           Retrieve latest scan data with timestamps.
 
            Returns:
-               Optional tuple of (angles_rad, ranges_m, qualities, timestamps) as lists,
+               Optional tuple of (angles_rad, ranges_m, qualities, timestamp) as lists,
                or None if operation fails.
 
            Note:
                Scanning must be started before calling this method.
-               Timestamps are in nanoseconds, with the first point's timestamp coming from the hardware.
-               Each subsequent point's timestamp is incremented based on the scan duration (frequency).
+               Timestamp is in nanoseconds for the first point. Comes from the hardware.
+               Each subsequent point's timestamp can be incremented based on the scan duration (frequency) later on.
                Only valid measurement points are included in the results.
            )");
 }
