@@ -405,10 +405,11 @@ class RplidarDriver {
       return std::nullopt;
     }
     
-    // Sort scan data by angle for consistent output
-    if (driver_ != nullptr) {
-      driver_->ascendScanData(nodes, node_count);
-    }
+    // BUG: This will make the sequence of points inconsistent, bad for point-wise timestamp estimation
+    // // Sort scan data by angle for consistent output
+    // if (driver_ != nullptr) {
+    //   driver_->ascendScanData(nodes, node_count);
+    // }
 
     return ProcessScanNodes(nodes, node_count);
   }
